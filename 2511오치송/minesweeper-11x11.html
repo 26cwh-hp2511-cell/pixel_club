@@ -1,0 +1,108 @@
+Exit code: 0
+Wall time: 1.3 seconds
+Output:
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>지뢰찾기 · 11×11</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, Pretendard, system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { min-height: 100vh; margin: 0; display: grid; place-items: center; background: radial-gradient(circle at top, #254064, #0b1320 65%); color: #eff6ff; }
+    main { width: min(94vw, 620px); padding: 28px; border: 1px solid #54739e; border-radius: 24px; background: rgba(13, 28, 47, .9); box-shadow: 0 24px 70px rgba(0,0,0,.35); }
+    h1 { margin: 0; font-size: clamp(1.6rem, 5vw, 2.25rem); letter-spacing: -.05em; }
+    .sub { margin: 6px 0 22px; color: #a9bfd9; }
+    .panel { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; margin-bottom: 16px; border-radius: 14px; background: #182d48; font-weight: 700; }
+    .panel span { font-variant-numeric: tabular-nums; }
+    button { font: inherit; cursor: pointer; }
+    #reset { border: 0; border-radius: 10px; padding: 8px 11px; color: #12243a; background: #f7c948; font-size: 1.05rem; }
+    #status { min-height: 1.4em; margin: 0 0 13px; color: #c8dbf1; text-align: center; }
+    #board { display: grid; grid-template-columns: repeat(11, 1fr); gap: 4px; aspect-ratio: 1; user-select: none; }
+    .cell { min-width: 0; aspect-ratio: 1; border: 0; border-radius: 6px; background: #3a5d85; color: #fff; font-size: clamp(.7rem, 2.8vw, 1.1rem); font-weight: 900; box-shadow: inset 0 -3px rgba(0,0,0,.19); }
+    .cell:hover:not(.open) { background: #4c739f; }
+    .cell.open { cursor: default; background: #c6d8e8; box-shadow: none; }
+    .cell.mine { background: #e65c5c; }
+    .cell.flagged { color: #ffd166; }
+    .n1 { color: #2463eb; } .n2 { color: #15803d; } .n3 { color: #dc2626; } .n4 { color: #6d28d9; } .n5 { color: #9f1239; } .n6 { color: #0e7490; } .n7 { color: #1f2937; } .n8 { color: #64748b; }
+    .help { margin: 18px 0 0; text-align: center; color: #a9bfd9; font-size: .9rem; }
+    kbd { padding: 2px 5px; border-radius: 4px; background: #2b4768; color: white; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>지뢰찾기 <span aria-label="11 곱하기 11">11×11</span></h1>
+    <p class="sub">빈칸을 열고, 모든 지뢰를 피해 보세요.</p>
+    <div class="panel"><span>💣 <b id="mines">20</b></span><button id="reset" aria-label="새 게임">🙂</button><span>⏱ <b id="time">000</b></span></div>
+    <p id="status" aria-live="polite">첫 칸은 언제나 안전합니다.</p>
+    <div id="board" role="grid" aria-label="지뢰찾기 게임판"></div>
+    <p class="help">왼쪽 클릭: 열기 · 오른쪽 클릭: 깃발 <kbd>R</kbd>: 새 게임</p>
+  </main>
+  <script>
+    const SIZE = 11, MINE_COUNT = 20;
+    const board = document.querySelector('#board'), minesEl = document.querySelector('#mines');
+    const timeEl = document.querySelector('#time'), statusEl = document.querySelector('#status'), reset = document.querySelector('#reset');
+    let cells, started, gameOver, flags, seconds, timer;
+
+    function neighbours(i) {
+      const row = Math.floor(i / SIZE), col = i % SIZE, result = [];
+      for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+        const r = row + dr, c = col + dc;
+        if ((dr || dc) && r >= 0 && r < SIZE && c >= 0 && c < SIZE) result.push(r * SIZE + c);
+      }
+      return result;
+    }
+    function placeMines(safe) {
+      const blocked = new Set([safe, ...neighbours(safe)]), spots = [];
+      for (let i = 0; i < SIZE * SIZE; i++) if (!blocked.has(i)) spots.push(i);
+      for (let n = 0; n < MINE_COUNT; n++) {
+        const pick = Math.floor(Math.random() * spots.length);
+        cells[spots.splice(pick, 1)[0]].mine = true;
+      }
+      cells.forEach((cell, i) => cell.count = neighbours(i).filter(j => cells[j].mine).length);
+    }
+    function start() { if (!started) { started = true; timer = setInterval(() => { seconds++; timeEl.textContent = String(seconds).padStart(3, '0'); }, 1000); } }
+    function render(cell) {
+      const el = cell.el;
+      el.className = 'cell' + (cell.open ? ' open' : '') + (cell.flag ? ' flagged' : '') + (cell.mine && gameOver ? ' mine' : '');
+      el.textContent = cell.open ? (cell.mine ? '💣' : cell.count || '') : (cell.flag ? '⚑' : '');
+      if (cell.open && cell.count && !cell.mine) el.classList.add('n' + cell.count);
+      el.setAttribute('aria-label', cell.open ? (cell.mine ? '지뢰' : `주변 지뢰 ${cell.count}개`) : (cell.flag ? '깃발 표시됨' : '닫힌 칸'));
+    }
+    function reveal(i) {
+      const cell = cells[i];
+      if (cell.open || cell.flag || gameOver) return;
+      if (!started) { placeMines(i); start(); }
+      cell.open = true;
+      if (cell.mine) { finish(false); return; }
+      if (!cell.count) neighbours(i).forEach(reveal);
+      render(cell); checkWin();
+    }
+    function toggleFlag(i) {
+      const cell = cells[i];
+      if (cell.open || gameOver) return;
+      cell.flag = !cell.flag; flags += cell.flag ? 1 : -1;
+      minesEl.textContent = MINE_COUNT - flags; render(cell);
+    }
+    function finish(won) {
+      gameOver = true; clearInterval(timer);
+      cells.forEach(cell => { if (cell.mine) cell.open = true; render(cell); });
+      reset.textContent = won ? '😎' : '😵';
+      statusEl.textContent = won ? '축하합니다! 모든 안전한 칸을 열었습니다.' : '앗, 지뢰를 밟았습니다. 다시 도전해 보세요!';
+    }
+    function checkWin() { if (cells.filter(c => c.open).length === SIZE * SIZE - MINE_COUNT) finish(true); }
+    function newGame() {
+      clearInterval(timer); started = gameOver = false; flags = seconds = 0; minesEl.textContent = MINE_COUNT; timeEl.textContent = '000'; reset.textContent = '🙂';
+      statusEl.textContent = '첫 칸은 언제나 안전합니다.'; board.innerHTML = '';
+      cells = Array.from({ length: SIZE * SIZE }, (_, i) => {
+        const el = document.createElement('button'); el.className = 'cell'; el.type = 'button'; el.setAttribute('role', 'gridcell');
+        el.addEventListener('click', () => reveal(i)); el.addEventListener('contextmenu', e => { e.preventDefault(); toggleFlag(i); });
+        board.append(el); const cell = { el, mine: false, open: false, flag: false, count: 0 }; render(cell); return cell;
+      });
+    }
+    reset.addEventListener('click', newGame); document.addEventListener('keydown', e => { if (e.key.toLowerCase() === 'r') newGame(); }); newGame();
+  </script>
+</body>
+</html>
+
